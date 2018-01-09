@@ -54,6 +54,79 @@ def get_paths(input_path):
         raise ValueError('save_dir is not a valid path.')
     return model_path, os.path.join(save_dir, 'config.pkl'), os.path.join(save_dir, 'chars_vocab.pkl')
 
+def libchatbot(save_dir='models/reddit', max_length=500, beam_width=2,
+        relevance=-1., temperature=1.0, topn=-1):
+    model_path, config_path, vocab_path = get_paths(save_dir)
+    # Arguments passed to sample.py direct us to a saved model.
+    # Load the separate arguments by which that model was previously trained.
+    # That's saved_args. Use those to load the model.
+    saved_args = None
+    chars = None
+    vocab = None
+    with open(config_path, 'rb') as f:
+        saved_args = pickle.load(f)
+    # Separately load chars and vocab from the save directory.
+    with open(vocab_path, 'rb') as f:
+        chars, vocab = pickle.load(f)
+    # Create the model from the saved arguments, in inference mode.
+    print("Creating model...")
+    saved_args.batch_size = beam_width
+    net = Model(saved_args, True)
+    config = tf.ConfigProto()
+    config.gpu_options.allow_growth = True
+    # Make tensorflow less verbose; filter out info (1+) and warnings (2+) but not errors (3).
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+    session = tf.Session(config=config)
+    session.__enter__()
+    tf.global_variables_initializer().run()
+    saver = tf.train.Saver(net.save_variables_list())
+    # Restore the saved variables, replacing the initialized values.
+    print("Restoring weights...")
+    saver.restore(session, model_path)
+    states = initial_state_with_relevance_masking(net, session, relevance)
+    args = {
+        'session': session,
+        'states': states
+    }
+
+    def consumer(text, args=args, net=net, vocab=vocab, max_length=max_length,
+            relevance=relevance, temperature=temperature, beam_width=beam_width, topn=topn):
+        user_input = text
+        states = args['states']
+        session = args['session']
+        
+        states = forward_text(net, session, states, relevance, vocab, sanitize_text(vocab, "> " + user_input + "\n>"))
+        computer_response_generator = beam_search_generator(sess=session, net=net,
+            initial_state=copy.deepcopy(states), initial_sample=vocab[' '],
+            early_term_token=vocab['\n'], beam_width=beam_width, forward_model_fn=forward_with_mask,
+            forward_args={'relevance':relevance, 'mask_reset_token':vocab['\n'], 'forbidden_token':vocab['>'],
+                            'temperature':temperature, 'topn':topn})
+        out_chars = []
+        result = ''
+        for i, char_token in enumerate(computer_response_generator):
+            out_chars.append(chars[char_token])
+            result += chars[char_token]
+            print(possibly_escaped_char(out_chars), end='', flush=True)
+            states = forward_text(net, session, states, relevance, vocab, chars[char_token])
+            if i >= max_length: break
+        states = forward_text(net, session, states, relevance, vocab, sanitize_text(vocab, "\n> "))
+
+        args['states'] = states
+        args['session'] = session
+        return result
+    
+    def save_states(name):
+        with open(name + '.pkl', 'wb') as f:
+            pickle.dump(args['states'], f)
+
+    def load_states(name):
+        with open(name + '.pkl', 'rb') as f:
+            args['states'] = pickle.load(f)
+
+    def reset_states(net=net, relevance=relevance):
+        args['states'] = initial_state_with_relevance_masking(net, args['session'], relevance)
+    return save_states, load_states, reset_states, consumer
+
 def sample_main(args):
     model_path, config_path, vocab_path = get_paths(args.save_dir)
     # Arguments passed to sample.py direct us to a saved model.
@@ -142,6 +215,14 @@ def chatbot(net, sess, chars, vocab, max_length, beam_width, relevance, temperat
                 if i >= max_length: break
             states = forward_text(net, sess, states, relevance, vocab, sanitize_text(vocab, "\n> "))
 
+def save_states(states, name):
+    with open(name + '.pkl', 'wb') as f:
+        pickle.dump(states, f)
+
+def load_states(name):
+    with open(name + '.pkl', 'rb') as f:
+        return pickle.load(f)
+
 def process_user_command(user_input, states, relevance, temperature, topn, beam_width):
     user_command_entered = False
     reset = False
@@ -171,6 +252,16 @@ def process_user_command(user_input, states, relevance, temperature, topn, beam_
             user_command_entered = True
             reset = True
             print("[Model state reset]")
+        elif user_input.startswith('--save '):
+            user_command_entered = True
+            input_text = user_input[len('--save '):]
+            save_states(states, input_text)
+            print("[Saved states to \"{}.pkl\"]".format(input_text))
+        elif user_input.startswith('--load '):
+            user_command_entered = True
+            input_text = user_input[len('--load '):]
+            states = load_states(input_text)
+            print("[Loaded saved states from \"{}.pkl\"]".format(input_text))
     except ValueError:
         print("[Value error with provided argument.]")
     return user_command_entered, reset, states, relevance, temperature, topn, beam_width
