@@ -85,42 +85,53 @@ async def process_command(msg_content, message):
         response = "Sorry, you have been banned."
     else:
         # Operators and DMs can use these commands
-        if message.author.id in operators or message.channel.is_private:
-            if msg_content.startswith('--reset'):
-                user_command_entered = True
+        if msg_content.startswith('--reset'):
+            user_command_entered = True
+            if message.author.id in operators or message.channel.is_private:
                 reset()
                 await save_channel_states(message.channel)
                 print()
                 print("[Model state reset]")
                 response = "Model state reset."
-        else:
+            else:
+                response = "Insufficient permissions."
+                
+        # Operators can use these commands
+        elif msg_content.startswith('--resetbasic'):
             user_command_entered = True
-            response = "Insufficient permissions."
-
-        # Operators can use these commands and didn't already run a command
-        if message.author.id in operators:
-            if msg_content.startswith('--resetbasic'):
-                user_command_entered = True
+            if message.author.id in operators:
                 reset()
                 print()
                 print("[Model state reset]")
                 response = "Model state reset."
-            elif msg_content.startswith('--save '):
-                user_command_entered = True
+            else:
+                response = "Insufficient permissions."
+        
+        elif msg_content.startswith('--save '):
+            user_command_entered = True
+            if message.author.id in operators:
                 input_text = msg_content[len('--save '):]
                 save(input_text)
                 print()
                 print("[Saved states to \"{}.pkl\"]".format(input_text))
                 response = "Saved model state to \"{}.pkl\".".format(input_text)
-            elif msg_content.startswith('--load '):
-                user_command_entered = True
+            else:
+                response = "Insufficient permissions."
+        
+        elif msg_content.startswith('--load '):
+            user_command_entered = True
+            if message.author.id in operators:
                 input_text = msg_content[len('--load '):]
                 load(input_text)
                 print()
                 print("[Loaded saved states from \"{}.pkl\"]".format(input_text))
                 response = "Loaded saved model state from \"{}.pkl\".".format(input_text)
-            elif msg_content.startswith('--autosaveon'):
-                user_command_entered = True
+            else:
+                response = "Insufficient permissions."
+
+        elif msg_content.startswith('--autosaveon'):
+            user_command_entered = True
+            if message.author.id in operators:
                 if not autosave:
                     autosave = True
                     print()
@@ -128,8 +139,12 @@ async def process_command(msg_content, message):
                     response = "Turned on autosaving."
                 else:
                     response = "Autosaving is already on."
-            elif msg_content.startswith('--autosaveoff'):
-                user_command_entered = True
+            else:
+                response = "Insufficient permissions."
+        
+        elif msg_content.startswith('--autosaveoff'):
+            user_command_entered = True
+            if message.author.id in operators:
                 if autosave:
                     autosave = False
                     print()
@@ -137,8 +152,12 @@ async def process_command(msg_content, message):
                     response = "Turned off autosaving."
                 else:
                     response = "Autosaving is already off."
-            elif msg_content.startswith('--autoloadton'):
-                user_command_entered = True
+            else:
+                response = "Insufficient permissions."
+        
+        elif msg_content.startswith('--autoloadton'):
+            user_command_entered = True
+            if message.author.id in operators:
                 if not autoload:
                     autoload = True
                     print()
@@ -146,8 +165,12 @@ async def process_command(msg_content, message):
                     response = "Turned on autoloading."
                 else:
                     response = "Autoloading is already on."
-            elif msg_content.startswith('--autoloadoff'):
-                user_command_entered = True
+            else:
+                response = "Insufficient permissions."
+        
+        elif msg_content.startswith('--autoloadoff'):
+            user_command_entered = True
+            if message.author.id in operators:
                 if autoload:
                     autoload = False
                     print()
@@ -155,9 +178,8 @@ async def process_command(msg_content, message):
                     response = "Turned off autoloading."
                 else:
                     response = "Autoloading is already off."
-        elif not user_command_entered:
-            user_command_entered = True
-            response = "Insufficient permissions."
+            else:
+                response = "Insufficient permissions."
     
     return user_command_entered, response
 
