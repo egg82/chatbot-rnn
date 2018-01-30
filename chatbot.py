@@ -89,10 +89,11 @@ def libchatbot(save_dir='models/reddit', max_length=500, beam_width=2,
         'states': states
     }
 
-    def consumer(text, args=args, net=net, vocab=vocab, max_length=max_length,
-            relevance=relevance, temperature=temperature, beam_width=beam_width, topn=topn):
+    async def consumer(text, args=args, states=None, net=net, vocab=vocab, max_length=max_length,
+            relevance=relevance, temperature=temperature, beam_width=beam_width, topn=topn, function=None, function_args=None, function_run_every=20, print_response=True):
         user_input = text
-        states = args['states']
+        if states == None:
+            states = args['states']
         session = args['session']
         
         states = forward_text(net, session, states, relevance, vocab, sanitize_text(vocab, "> " + user_input + "\n>"))
@@ -106,26 +107,49 @@ def libchatbot(save_dir='models/reddit', max_length=500, beam_width=2,
         for i, char_token in enumerate(computer_response_generator):
             out_chars.append(chars[char_token])
             result += chars[char_token]
-            print(possibly_escaped_char(out_chars), end='', flush=True)
+            if print_response: print(possibly_escaped_char(out_chars), end='', flush=True)
             states = forward_text(net, session, states, relevance, vocab, chars[char_token])
+
+            if not function == None and i % function_run_every == 0:
+                if not function_args == None:
+                    try:
+                        await function(function_args)
+                    except:
+                        pass
+                else:
+                    try:
+                        await function()
+                    except:
+                        pass
+
             if i >= max_length: break
         states = forward_text(net, session, states, relevance, vocab, sanitize_text(vocab, "\n> "))
 
         args['states'] = states
         args['session'] = session
-        return result
+        
+        return result, states
     
-    def save_states(name):
+    def save_states(name, states=args['states']):
         with open(name + '.pkl', 'wb') as f:
-            pickle.dump(args['states'], f)
+            pickle.dump(states, f)
 
     def load_states(name):
         with open(name + '.pkl', 'rb') as f:
             args['states'] = pickle.load(f)
 
+    def get_states(name):
+        with open(name + '.pkl', 'rb') as f:
+            return pickle.load(f)
+
+    def get_current_states():
+        return args['states']
+
     def reset_states(net=net, relevance=relevance):
-        args['states'] = initial_state_with_relevance_masking(net, args['session'], relevance)
-    return save_states, load_states, reset_states, consumer
+        states = initial_state_with_relevance_masking(net, args['session'], relevance)
+        args['states'] = states
+        return states
+    return save_states, load_states, get_states, get_current_states, reset_states, consumer
 
 def sample_main(args):
     model_path, config_path, vocab_path = get_paths(args.save_dir)
