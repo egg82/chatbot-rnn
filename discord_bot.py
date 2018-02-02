@@ -509,6 +509,6 @@ async def on_message(message):
                 else:
                     await send_message(message, 'Your message is empty')
             else:
-                await send_message(message, 'Please wait for the first message to finish processing')
+                await send_message(message, 'Please wait for your response to be generated before sending more messages')
 
 client.run('Token Goes Here')
