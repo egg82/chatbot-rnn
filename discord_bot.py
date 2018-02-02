@@ -7,7 +7,7 @@ try: # Unicode patch for Windows
     import win_unicode_console
     win_unicode_console.enable()
 except:
-    msg = "Please install the 'win_unicode_console' module."
+    msg = "Please install the 'win_unicode_console' module if you're using Python 3.5."
     if os.name == 'nt': print(msg)
 
 do_logging = True
@@ -25,6 +25,8 @@ user_settings_folder = "user_settings"
 ult_operators_file = user_settings_folder + "/" + "ult_operators.cfg"
 operators_file = user_settings_folder + "/" + "operators.cfg"
 banned_users_file = user_settings_folder + "/" + "banned_users.cfg"
+
+processing_users = []
 
 mention_in_message = True
 mention_message_separator = " - "
@@ -211,11 +213,7 @@ async def process_command(msg_content, message):
     if message.author.id in banned_users and not message.channel.is_private:
         user_command_entered = True
         
-        if mention_in_message:
-            user_mention = "<@" + message.author.id + ">" + mention_message_separator
-        else:
-            user_mention = ""
-        response = user_mention + "Sorry, you have been banned."
+        response = "Sorry, you have been banned."
     else:
         # Operators and DMs can use these commands
         if msg_content.startswith('--reset'):
@@ -430,7 +428,12 @@ async def set_typing(message):
     await client.send_typing(message.channel)
 
 async def send_message(message, text):
-    if not text == '': await client.send_message(message.channel, text)
+    if not text == '':
+        if mention_in_message:
+            user_mention = "<@" + message.author.id + ">" + mention_message_separator
+        else:
+            user_mention = ""
+        await client.send_message(message.channel, user_mention + text)
 
 @client.event
 async def on_message(message):
@@ -451,56 +454,61 @@ async def on_message(message):
         if user_command_entered:
             await send_message(message, response)
         else:
-            if not msg_content == '':
-                if not len(msg_content) > max_length:
-                    if autoload:
-                        states = load_channel_states(message.channel)
-                    else:
-                        states = get_current()
-                    
-                    old_states = states
-                    
-                    print() # Print out new line for formatting
-                    print('> ' + msg_content) # Print out user message
-                    
-                    # Automatically prints out response as it's written
-                    result, states = await consumer(msg_content, states=states, function=set_typing, function_args=message)
+            if not message.author.id in processing_users:
+                if not msg_content == '':
+                    if not len(msg_content) > max_length:
+                        # Possibly problematic: if something goes wrong,
+                        # then the user couldn't send messages anymore
+                        processing_users.append(message.author.id)
+                        
+                        if autoload:
+                            states = load_channel_states(message.channel)
+                        else:
+                            states = get_current()
+                        
+                        old_states = states
+                        
+                        print() # Print out new line for formatting
+                        print('> ' + msg_content) # Print out user message
+                        
+                        # Automatically prints out response as it's written
+                        result, states = await consumer(msg_content, states=states, function=set_typing, function_args=message)
 
-                    # Purely debug
-                    # print(states[0][0][0]) Prints out the lowest level array
-                    # for state in states[0][0][0]: Prints out every entry in the lowest level array
-                    #     print(state)
+                        # Purely debug
+                        # print(states[0][0][0]) Prints out the lowest level array
+                        # for state in states[0][0][0]: Prints out every entry in the lowest level array
+                        #     print(state)
 
-                    while result.startswith(' '):
-                        result = result[1:]
-                    
-                    if result == '':
-                        result = "..."
-                    
-                    if mention_in_message:
-                        user_mention = "<@" + message.author.id + ">" + mention_message_separator
+                        while result.startswith(' '):
+                            result = result[1:]
+                        
+                        if result == '':
+                            result = "..."
+                        
+                        await send_message(message, result)
+                        
+                        print() # Move cursor to next line after response
+                        
+                        log('\n> ' + msg_content + '\n' + result + '\n') # Log entire interaction
+                        if autosave:
+                            # Get the difference in the states
+                            states_diff = []
+                            for num in range(len(states)):
+                                for num_two in range(len(states[num])):
+                                    for num_three in range(len(states[num][num_two])):
+                                        for num_four in range(len(states[num][num_two][num_three])):
+                                            states_diff.append(old_states[num][num_two][num_three][num_four] - states[num][num_two][num_three][num_four])
+                                        
+                            add_states_to_queue(message.channel, states_diff)
+                            write_state_queue()
+                            # save_channel_states(message.channel) Old saving
+
+                        processing_users.remove(message.author.id)
                     else:
-                        user_mention = ""
-                    await send_message(message, user_mention + result)
-                    
-                    print() # Move cursor to next line after response
-                    
-                    log('\n> ' + msg_content + '\n' + result + '\n') # Log entire interaction
-                    if autosave:
-                        # Get the difference in the states
-                        states_diff = []
-                        for num in range(len(states)):
-                            for num_two in range(len(states[num])):
-                                for num_three in range(len(states[num][num_two])):
-                                    for num_four in range(len(states[num][num_two][num_three])):
-                                        states_diff.append(old_states[num][num_two][num_three][num_four] - states[num][num_two][num_three][num_four])
-                                    
-                        add_states_to_queue(message.channel, states_diff)
-                        write_state_queue()
-                        # save_channel_states(message.channel) Old saving
+                        await send_message(message, 'Your message is too long')
                 else:
-                    await send_message(message, 'Error: Message too long!')
+                    await send_message(message, 'Your message is empty')
             else:
-                await send_message(message, 'Error: Missing message!')
+                await send_message(message, 'Please wait for the first message to finish processing')
 
 client.run('Token Goes Here')
