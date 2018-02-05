@@ -7,8 +7,10 @@ try: # Unicode patch for Windows
     import win_unicode_console
     win_unicode_console.enable()
 except:
-    msg = "Please install the 'win_unicode_console' module if you're using Python 3.5."
-    if os.name == 'nt': print(msg)
+    if os.name == 'nt':
+        import sys
+        if sys.version_info < (3,6):
+            print("Please install the 'win_unicode_console' module.")
 
 do_logging = True
 log_name = "Discord-Chatbot.log"
