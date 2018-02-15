@@ -28,7 +28,7 @@ ult_operators_file = user_settings_folder + "/" + "ult_operators.cfg"
 operators_file = user_settings_folder + "/" + "operators.cfg"
 banned_users_file = user_settings_folder + "/" + "banned_users.cfg"
 
-processing_users = []
+processing_users = {}
 
 mention_in_message = True
 mention_message_separator = " - "
@@ -456,12 +456,16 @@ async def on_message(message):
         if user_command_entered:
             await send_message(message, response)
         else:
-            if not message.author.id in processing_users:
+            if not (message.author.id in processing_users and message.channel.id in processing_users[message.author.id]):
                 if not msg_content == '':
                     if not len(msg_content) > max_length:
                         # Possibly problematic: if something goes wrong,
                         # then the user couldn't send messages anymore
-                        processing_users.append(message.author.id)
+                        if message.author.id in processing_users:
+                            user_channels = processing_users[message.author.id]
+                            user_channels.append(message.channel.id)
+                        else:
+                            processing_users.update({message.author.id:[message.channel.id]})
                         
                         if autoload:
                             states = load_channel_states(message.channel)
@@ -505,7 +509,10 @@ async def on_message(message):
                             write_state_queue()
                             # save_channel_states(message.channel) Old saving
 
-                        processing_users.remove(message.author.id)
+                        if len(processing_users[message.author.id]) <= 1:
+                            processing_users.pop(message.author.id, None)
+                        else:
+                            processing_users[message.author.id].remove(message.channel.id)
                     else:
                         await send_message(message, 'Your message is too long')
                 else:
@@ -513,4 +520,4 @@ async def on_message(message):
             else:
                 await send_message(message, 'Please wait for your response to be generated before sending more messages')
 
-client.run('Token Goes Here')
+client.run('Token Goes Here', reconnect=True)
