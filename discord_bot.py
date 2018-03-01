@@ -230,13 +230,13 @@ async def process_command(msg_content, message):
                 response = "Insufficient permissions."
                 
         # Operators can use these commands
-        elif msg_content.startswith('--resetbasic'):
+        elif msg_content.startswith('--basicreset'):
             user_command_entered = True
             if message.author.id in operators:
                 reset()
                 print()
-                print("[Model state reset]")
-                response = "Model state reset."
+                print("[Model state reset (basic)]")
+                response = "Model state reset (basic)."
             else:
                 response = "Insufficient permissions."
         
