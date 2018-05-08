@@ -22,6 +22,8 @@ states_folder_dm = states_main + "/" + "dm_states"
 autosave = True
 autoload = True
 max_length = 500
+relevance = 0.2
+temperature = 0.6
 
 user_settings_folder = "user_settings"
 ult_operators_file = user_settings_folder + "/" + "ult_operators.cfg"
@@ -40,7 +42,7 @@ banned_users = []
 states_queue = {}
 
 print('Loading Chatbot-RNN...')
-save, load, get, get_current, reset, consumer = libchatbot(max_length=max_length)
+save, load, get, get_current, reset, consumer = libchatbot(max_length=max_length, temperature=temperature)#, relevance=relevance)
 print('Chatbot-RNN has been loaded.')
 
 print('Preparing Discord Bot...')
@@ -227,7 +229,7 @@ async def process_command(msg_content, message):
                 print("[Model state reset]")
                 response = "Model state reset."
             else:
-                response = "Insufficient permissions."
+                response = "Error: Insufficient permissions."
                 
         # Operators can use these commands
         elif msg_content.startswith('--basicreset'):
@@ -238,7 +240,7 @@ async def process_command(msg_content, message):
                 print("[Model state reset (basic)]")
                 response = "Model state reset (basic)."
             else:
-                response = "Insufficient permissions."
+                response = "Error: Insufficient permissions."
         
         elif msg_content.startswith('--save '):
             user_command_entered = True
@@ -249,7 +251,7 @@ async def process_command(msg_content, message):
                 print("[Saved states to \"{}.pkl\"]".format(input_text))
                 response = "Saved model state to \"{}.pkl\".".format(input_text)
             else:
-                response = "Insufficient permissions."
+                response = "Error: Insufficient permissions."
         
         elif msg_content.startswith('--load '):
             user_command_entered = True
@@ -260,7 +262,7 @@ async def process_command(msg_content, message):
                 print("[Loaded saved states from \"{}.pkl\"]".format(input_text))
                 response = "Loaded saved model state from \"{}.pkl\".".format(input_text)
             else:
-                response = "Insufficient permissions."
+                response = "Error: Insufficient permissions."
 
         elif msg_content.startswith('--autosaveon'):
             user_command_entered = True
@@ -271,9 +273,9 @@ async def process_command(msg_content, message):
                     print("[Turned on autosaving]")
                     response = "Turned on autosaving."
                 else:
-                    response = "Autosaving is already on."
+                    response = "Error: Autosaving is already on."
             else:
-                response = "Insufficient permissions."
+                response = "Error: Insufficient permissions."
         
         elif msg_content.startswith('--autosaveoff'):
             user_command_entered = True
@@ -284,9 +286,9 @@ async def process_command(msg_content, message):
                     print("[Turned off autosaving]")
                     response = "Turned off autosaving."
                 else:
-                    response = "Autosaving is already off."
+                    response = "Error: Autosaving is already off."
             else:
-                response = "Insufficient permissions."
+                response = "Error: Insufficient permissions."
         
         elif msg_content.startswith('--autoloadton'):
             user_command_entered = True
@@ -297,9 +299,9 @@ async def process_command(msg_content, message):
                     print("[Turned on autoloading]")
                     response = "Turned on autoloading."
                 else:
-                    response = "Autoloading is already on."
+                    response = "Error: Autoloading is already on."
             else:
-                response = "Insufficient permissions."
+                response = "Error: Insufficient permissions."
         
         elif msg_content.startswith('--autoloadoff'):
             user_command_entered = True
@@ -310,9 +312,9 @@ async def process_command(msg_content, message):
                     print("[Turned off autoloading]")
                     response = "Turned off autoloading."
                 else:
-                    response = "Autoloading is already off."
+                    response = "Error: Autoloading is already off."
             else:
-                response = "Insufficient permissions."
+                response = "Error: Insufficient permissions."
 
         elif msg_content.startswith('--op '):
             user_command_entered = True
@@ -337,9 +339,9 @@ async def process_command(msg_content, message):
                     print("[Opped \"{}\"]".format(input_text))
                     response = "Opped \"{}\".".format(input_text)
                 else:
-                    response = "Unable to op user \"{}\".".format(input_text)
+                    response = "Error: Unable to op user \"{}\".".format(input_text)
             else:
-                response = "Insufficient permissions."
+                response = "Error: Insufficient permissions."
 
         elif msg_content.startswith('--deop '):
             user_command_entered = True
@@ -365,9 +367,9 @@ async def process_command(msg_content, message):
                     print("[De-opped \"{}\"]".format(input_text))
                     response = "De-opped \"{}\".".format(input_text)
                 else:
-                    response = "Unable to de-op user \"{}\".".format(input_text)
+                    response = "Error: Unable to de-op user \"{}\".".format(input_text)
             else:
-                response = "Insufficient permissions."
+                response = "Error: Insufficient permissions."
 
         elif msg_content.startswith('--ban '):
             user_command_entered = True
@@ -392,9 +394,9 @@ async def process_command(msg_content, message):
                     print("[Banned \"{}\"]".format(input_text))
                     response = "Banned \"{}\".".format(input_text)
                 else:
-                    response = "Unable to ban user \"{}\".".format(input_text)
+                    response = "Error: Unable to ban user \"{}\".".format(input_text)
             else:
-                response = "Insufficient permissions."
+                response = "Error: Insufficient permissions."
 
         elif msg_content.startswith('--unban '):
             user_command_entered = True
@@ -420,9 +422,9 @@ async def process_command(msg_content, message):
                     print("[Un-banned \"{}\"]".format(input_text))
                     response = "Un-banned \"{}\".".format(input_text)
                 else:
-                    response = "Unable to un-ban user \"{}\".".format(input_text)
+                    response = "Error: Unable to un-ban user \"{}\".".format(input_text)
             else:
-                response = "Insufficient permissions."
+                response = "Error: Insufficient permissions."
     
     return user_command_entered, response
 
@@ -514,10 +516,10 @@ async def on_message(message):
                         else:
                             processing_users[message.author.id].remove(message.channel.id)
                     else:
-                        await send_message(message, 'Your message is too long')
+                        await send_message(message, 'Error: Your message is too long (' + str(len(msg_content)) + '/' + str(max_length) + ' characters)!')
                 else:
-                    await send_message(message, 'Your message is empty')
+                    await send_message(message, 'Error: Your message is empty!')
             else:
-                await send_message(message, 'Please wait for your response to be generated before sending more messages')
+                await send_message(message, 'Error: Please wait for your response to be generated before sending more messages!')
 
 client.run('Token Goes Here', reconnect=True)

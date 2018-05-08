@@ -132,22 +132,22 @@ def libchatbot(save_dir='models/reddit', max_length=500, beam_width=2,
         
         return result, states
     
-    def save_states(name, states=args['states']):
+    def save_states(name, args=args, states=args['states']):
         with open(name + '.pkl', 'wb') as f:
             pickle.dump(states, f)
 
-    def load_states(name):
+    def load_states(name, args=args):
         with open(name + '.pkl', 'rb') as f:
             args['states'] = pickle.load(f)
 
-    def get_states(name):
+    def get_states(name, args=args):
         with open(name + '.pkl', 'rb') as f:
             return pickle.load(f)
 
-    def get_current_states():
+    def get_current_states(args=args):
         return args['states']
 
-    def reset_states(net=net, relevance=relevance):
+    def reset_states(net=net, relevance=relevance, args=args):
         states = initial_state_with_relevance_masking(net, args['session'], relevance)
         args['states'] = states
         return states
