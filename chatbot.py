@@ -88,7 +88,11 @@ def libchatbot(save_dir='models/reddit', max_length=500, beam_width=2,
     states = initial_state_with_relevance_masking(net, session, relevance)
     args = {
         'session': session,
-        'states': states
+        'states': states,
+        'relevance': relevance,
+        'temperature': temperature,
+        'topn': topn,
+        'beam_width': beam_width
     }
 
     async def consumer(text, args=args, states=None, net=net, vocab=vocab, max_length=max_length,
@@ -97,6 +101,16 @@ def libchatbot(save_dir='models/reddit', max_length=500, beam_width=2,
         if states == None:
             states = args['states']
         session = args['session']
+        relevance = args['relevance']
+        temperature = args['temperature']
+        topn = args['topn']
+        beam_width = args['beam_width']
+
+        # Fix relevance when states aren't prepped
+        if relevance <= 0. and len(states) == 2:
+            states = states[0]
+        elif relevance > 0. and len(states) != 2:
+            states = [states, copy.deepcopy(states)]
         
         states = forward_text(net, session, states, relevance, vocab, sanitize_text(vocab, "> " + user_input + "\n>"))
         computer_response_generator = beam_search_generator(sess=session, net=net,
@@ -129,10 +143,17 @@ def libchatbot(save_dir='models/reddit', max_length=500, beam_width=2,
 
         args['states'] = states
         args['session'] = session
+        args['relevance'] = relevance
+        args['temperature'] = temperature
+        args['topn'] = topn
+        args['beam_width'] = beam_width
         
         return result, states
     
-    def save_states(name, args=args, states=args['states']):
+    def save_states(name, args=args, states=None):
+        if states == None:
+            states = args['states']
+        
         with open(name + '.pkl', 'wb') as f:
             pickle.dump(states, f)
 
@@ -151,7 +172,30 @@ def libchatbot(save_dir='models/reddit', max_length=500, beam_width=2,
         states = initial_state_with_relevance_masking(net, args['session'], relevance)
         args['states'] = states
         return states
-    return save_states, load_states, get_states, get_current_states, reset_states, consumer
+
+    def change_settings(setting, new_value, args=args):
+        if setting.startswith('temperature'):
+            args['temperature'] = max(0.001, float(new_value))
+            return ("[Temperature set to {}]".format(args['temperature']))
+        elif setting.startswith('relevance'):
+            states = args['states']
+            relevance = args['relevance']
+            new_relevance = float(new_value)
+            if relevance <= 0. and new_relevance > 0.:
+                states = [states, copy.deepcopy(states)]
+            elif relevance > 0. and new_relevance <= 0.:
+                states = states[0]
+            args['states'] = states
+            args['relevance'] = new_relevance
+            return ("[Relevance disabled]" if args['relevance'] <= 0. else "[Relevance set to {}]".format(args['relevance']))
+        elif setting.startswith('topn'):
+            args['topn'] = int(new_value)
+            return ("[Top-n filtering disabled]" if args['topn'] <= 0 else "[Top-n filtering set to {}]".format(args['topn']))
+        elif setting.startswith('beam_width'):
+            args['beam_width'] = max(1, int(new_value))
+            return ("[Beam width set to {}]".format(args['beam_width']))
+    
+    return save_states, load_states, get_states, get_current_states, reset_states, change_settings, consumer
 
 def sample_main(args):
     model_path, config_path, vocab_path = get_paths(args.save_dir)
