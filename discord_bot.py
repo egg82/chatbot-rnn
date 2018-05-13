@@ -22,9 +22,11 @@ states_folder_dm = states_main + "/" + "dm_states"
 
 autosave = True
 autoload = True
+
 max_length = 500
-relevance = 0.2
-temperature = 0.6
+relevance = 0.1
+temperature = 1.2
+topn = 10
 
 user_settings_folder = "user_settings"
 ult_operators_file = user_settings_folder + "/" + "ult_operators.cfg"
@@ -43,7 +45,7 @@ banned_users = []
 states_queue = {}
 
 print('Loading Chatbot-RNN...')
-save, load, get, get_current, reset, consumer = libchatbot(max_length=max_length, temperature=temperature)#, relevance=relevance)
+save, load, get, get_current, reset, consumer = libchatbot(max_length=max_length, temperature=temperature, relevance=relevance, topn=topn)
 print('Chatbot-RNN has been loaded.')
 
 print('Preparing Discord Bot...')
@@ -118,7 +120,8 @@ def write_state_queue():
     for channel in states_queue:
         states = load_channel_states(channel)
         new_states = copy.deepcopy(states)
-        
+
+        states_diff = states_queue[channel]
         total_num = 0
         for num in range(len(states)):
             for num_two in range(len(states[num])):
@@ -500,6 +503,7 @@ async def on_message(message):
                         log('\n> ' + msg_content + '\n' + result + '\n') # Log entire interaction
                         if autosave:
                             # Get the difference in the states
+                            
                             states_diff = []
                             for num in range(len(states)):
                                 for num_two in range(len(states[num])):
