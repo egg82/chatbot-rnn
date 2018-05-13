@@ -2,6 +2,7 @@ from chatbot import libchatbot
 import discord
 import os
 import json
+import copy
 
 try: # Unicode patch for Windows
     import win_unicode_console
@@ -116,9 +117,8 @@ def add_states_to_queue(channel, states_diffs):
 def write_state_queue():
     for channel in states_queue:
         states = load_channel_states(channel)
-        new_states = states
+        new_states = copy.deepcopy(states)
         
-        states_diff = states_queue[channel]
         total_num = 0
         for num in range(len(states)):
             for num_two in range(len(states[num])):
@@ -474,7 +474,7 @@ async def on_message(message):
                         else:
                             states = get_current()
                         
-                        old_states = states
+                        old_states = copy.deepcopy(states)
                         
                         print() # Print out new line for formatting
                         print('> ' + msg_content) # Print out user message
@@ -506,7 +506,7 @@ async def on_message(message):
                                     for num_three in range(len(states[num][num_two])):
                                         for num_four in range(len(states[num][num_two][num_three])):
                                             states_diff.append(old_states[num][num_two][num_three][num_four] - states[num][num_two][num_three][num_four])
-                                        
+                            
                             add_states_to_queue(message.channel, states_diff)
                             write_state_queue()
                             # save_channel_states(message.channel) Old saving
