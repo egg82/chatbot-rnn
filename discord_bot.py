@@ -119,9 +119,16 @@ def add_states_to_queue(channel, states_diffs):
 def write_state_queue():
     for channel in states_queue:
         states = load_channel_states(channel)
-        new_states = copy.deepcopy(states)
-
+            
         states_diff = states_queue[channel]
+        if get_states_size(states) > len(states_diff):
+            states = states[0]
+        
+        elif get_states_size(states) < len(states_diff):
+            states = [ copy.deepcopy(states), copy.deepcopy(states)]
+        
+        new_states = copy.deepcopy(states)
+        
         total_num = 0
         for num in range(len(states)):
             for num_two in range(len(states[num])):
@@ -132,6 +139,16 @@ def write_state_queue():
             
         save(get_states_file(channel), states=new_states)
     states_queue.clear()
+
+def get_states_size(states):
+    total_num = 0
+    if states != None:
+        for num in range(len(states)):
+            for num_two in range(len(states[num])):
+                for num_three in range(len(states[num][num_two])):
+                    for num_four in range(len(states[num][num_two][num_three])):
+                        total_num += 1
+    return total_num
 
 def is_discord_id(user_id):
     # Quick general check to see if it matches the ID formatting
@@ -244,6 +261,18 @@ async def process_command(msg_content, message):
                 response = "Model state reset (basic)."
             else:
                 response = "Error: Insufficient permissions."
+
+        elif msg_content.startswith('--restart'):
+            user_command_entered = True
+            if message.author.id in operators:
+                reset()
+                print()
+                print("[Restarting...]")
+                response = "Restarting..."
+                await send_message(message, response)
+                exit()
+            else:
+                response = "Error: Insufficient permissions."
         
         elif msg_content.startswith('--save '):
             user_command_entered = True
@@ -293,7 +322,7 @@ async def process_command(msg_content, message):
             else:
                 response = "Error: Insufficient permissions."
         
-        elif msg_content.startswith('--autoloadton'):
+        elif msg_content.startswith('--autoloadon'):
             user_command_entered = True
             if message.author.id in operators:
                 if not autoload:
