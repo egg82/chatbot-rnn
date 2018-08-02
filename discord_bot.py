@@ -242,7 +242,7 @@ async def process_command(msg_content, message):
         # Operators and DMs can use these commands
         if msg_content.startswith('--reset'):
             user_command_entered = True
-            if message.author.id in operators or message.channel.is_private:
+            if message.author.id in operators or message.channel.is_private or message.author.server_permissions.administrator:
                 reset()
                 save_channel_states(message.channel)
                 print()
@@ -532,10 +532,11 @@ async def process_command(msg_content, message):
     return user_command_entered, response
 
 async def set_typing(message):
-    await client.send_typing(message.channel)
+    if message.server == None or message.channel.permissions_for(message.server.get_member(client.user.id)).send_messages:
+        await client.send_typing(message.channel)
 
 async def send_message(message, text):
-    if not text == '':
+    if not text == '' and (message.server == None or message.channel.permissions_for(message.server.get_member(client.user.id)).send_messages):
         if mention_in_message:
             user_mention = "<@" + message.author.id + ">" + mention_message_separator
         else:
