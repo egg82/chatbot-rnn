@@ -35,7 +35,7 @@ ult_operators_file = user_settings_folder + "/" + "ult_operators.cfg"
 operators_file = user_settings_folder + "/" + "operators.cfg"
 banned_users_file = user_settings_folder + "/" + "banned_users.cfg"
 
-processing_users = {}
+processing_users = []
 
 mention_in_message = True
 mention_message_separator = " - "
@@ -67,12 +67,12 @@ def log(message):
         with open(log_name, "a", encoding="utf-8") as log_file:
             log_file.write(message)
 
-def load_channel_states(channel):
+def load_states(states_id):
     global states_folder, states_folder_dm, load, reset
 
     make_folders()
     
-    states_file = get_states_file(channel)
+    states_file = get_states_file(states_id)
         
     if os.path.exists(states_file + ".pkl") and os.path.isfile(states_file + ".pkl"):
         return get(states_file)
@@ -89,40 +89,46 @@ def make_folders():
     if not os.path.exists(user_settings_folder):
         os.makedirs(user_settings_folder)
 
-def get_states_file(channel):
-    if channel.is_private:
-        states_file = states_folder_dm + "/" + channel.id
+def get_states_file(states_id):
+    if states_id.endswith("p"):
+        states_file = states_folder_dm + "/" + states_id
     else:
-        states_file = states_folder + "/" + channel.id
+        states_file = states_folder + "/" + states_id
 
     return states_file
 
-def save_channel_states(channel): # Depricated, use states queue now
+def save_states(states_id): # Saves directly to the file, recommended to use states queue
     global states_folder, states_folder_dm, save
 
     make_folders()
 
-    states_file = get_states_file(channel)
+    states_file = get_states_file(states_id)
     
     save(states_file)
 
-def add_states_to_queue(channel, states_diffs):
+def add_states_to_queue(states_id, states_diffs):
     current_states_diffs = None
     
-    if channel in states_queue:
-        current_states_diffs = states_queue[channel]
+    if states_id in states_queue:
+        current_states_diffs = states_queue[states_id]
 
     for num in range(len(states_diffs)):
         if not current_states_diffs == None and not current_states_diffs[num] == None:
             states_diffs[num] += current_states_diffs[num]
     
-    states_queue.update({channel:states_diffs})
+    states_queue.update({states_id:states_diffs})
+
+def get_states_id(message):
+    if message.server == None or message.channel.is_private:
+        return message.channel.id + "p"
+    else:
+        return message.server.id + "s"
 
 def write_state_queue():
-    for channel in states_queue:
-        states = load_channel_states(channel)
+    for states_id in states_queue:
+        states = load_states(states_id)
             
-        states_diff = states_queue[channel]
+        states_diff = states_queue[states_id]
         if get_states_size(states) > len(states_diff):
             states = states[0]
         
@@ -139,7 +145,7 @@ def write_state_queue():
                         new_states[num][num_two][num_three][num_four] = states[num][num_two][num_three][num_four] - states_diff[total_num]
                         total_num += 1
             
-        save(get_states_file(channel), states=new_states)
+        save(get_states_file(states_id), states=new_states)
     states_queue.clear()
 
 def get_states_size(states):
@@ -246,7 +252,7 @@ async def process_command(msg_content, message):
             user_command_entered = True
             if message.author.id in operators or message.channel.is_private or message.author.server_permissions.administrator:
                 reset()
-                save_channel_states(message.channel)
+                save_states(get_states_id(message))
                 print()
                 print("[Model state reset]")
                 response = "Model state reset."
@@ -567,19 +573,15 @@ async def on_message(message):
         if user_command_entered:
             await send_message(message, response)
         else:
-            if not (message.author.id in processing_users and message.channel.id in processing_users[message.author.id]):
+            if not (message.author.id in processing_users):
                 if not msg_content == '':
                     if not len(msg_content) > max_length:
                         # Possibly problematic: if something goes wrong,
                         # then the user couldn't send messages anymore
-                        if message.author.id in processing_users:
-                            user_channels = processing_users[message.author.id]
-                            user_channels.append(message.channel.id)
-                        else:
-                            processing_users.update({message.author.id:[message.channel.id]})
+                        processing_users.append(message.author.id)
                         
                         if autoload:
-                            states = load_channel_states(message.channel)
+                            states = load_states(get_states_id(message))
                         else:
                             states = get_current()
                         
@@ -617,17 +619,14 @@ async def on_message(message):
                                         for num_four in range(len(states[num][num_two][num_three])):
                                             states_diff.append(old_states[num][num_two][num_three][num_four] - states[num][num_two][num_three][num_four])
                             
-                            add_states_to_queue(message.channel, states_diff)
+                            add_states_to_queue(get_states_id(message), states_diff)
                             write_state_queue()
                             # save_channel_states(message.channel) Old saving
                         elif autosave and len(old_states) != len(states):
                             # Revert to old saving to directly write new array dimensions
-                            save_channel_states(message.channel)
+                            save_channel_states(get_states_id(message))
 
-                        if len(processing_users[message.author.id]) <= 1:
-                            processing_users.pop(message.author.id, None)
-                        else:
-                            processing_users[message.author.id].remove(message.channel.id)
+                        processing_users.remove(message.author.id)
                     else:
                         await send_message(message, 'Error: Your message is too long (' + str(len(msg_content)) + '/' + str(max_length) + ' characters)!')
                 else:
