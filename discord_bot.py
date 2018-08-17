@@ -16,17 +16,19 @@ except:
 do_logging = True
 log_name = "Discord-Chatbot.log"
 
-states_main = "states"
-states_folder = states_main + "/" + "server_states"
-states_folder_dm = states_main + "/" + "dm_states"
-
 autosave = True
 autoload = True
 
+model = "reddit"
+save_dir = "models/" + model
 max_length = 500
 relevance = 0.1
 temperature = 1.2
 topn = 10
+
+states_main = "states" + "_" + model
+states_folder = states_main + "/" + "server_states"
+states_folder_dm = states_main + "/" + "dm_states"
 
 user_settings_folder = "user_settings"
 ult_operators_file = user_settings_folder + "/" + "ult_operators.cfg"
@@ -45,7 +47,7 @@ banned_users = []
 states_queue = {}
 
 print('Loading Chatbot-RNN...')
-save, load, get, get_current, reset, change_settings, consumer = libchatbot(max_length=max_length, temperature=temperature, relevance=relevance, topn=topn)
+save, load, get, get_current, reset, change_settings, consumer = libchatbot(save_dir=save_dir, max_length=max_length, temperature=temperature, relevance=relevance, topn=topn)
 print('Chatbot-RNN has been loaded.')
 
 print('Preparing Discord Bot...')
