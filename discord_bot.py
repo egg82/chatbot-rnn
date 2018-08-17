@@ -264,7 +264,7 @@ async def process_command(msg_content, message):
 
         elif msg_content.startswith('--restart'):
             user_command_entered = True
-            if message.author.id in operators:
+            if message.author.id in ult_operators:
                 reset()
                 print()
                 print("[Restarting...]")
@@ -531,12 +531,15 @@ async def process_command(msg_content, message):
     
     return user_command_entered, response
 
+def has_channel_perms(message):
+    return message.server == None or message.channel.permissions_for(message.server.get_member(client.user.id)).send_messages;
+
 async def set_typing(message):
-    if message.server == None or message.channel.permissions_for(message.server.get_member(client.user.id)).send_messages:
+    if has_channel_perms(message):
         await client.send_typing(message.channel)
 
 async def send_message(message, text):
-    if not text == '' and (message.server == None or message.channel.permissions_for(message.server.get_member(client.user.id)).send_messages):
+    if not text == '' and has_channel_perms(message):
         if mention_in_message:
             user_mention = "<@" + message.author.id + ">" + mention_message_separator
         else:
@@ -547,7 +550,7 @@ async def send_message(message, text):
 async def on_message(message):
     global save, load, get, get_current, reset, change_settings, consumer, states_file, autosave
     
-    if (message.content.startswith('>') or message.channel.is_private) and not message.author.bot:
+    if (message.content.startswith('>') or message.channel.is_private) and not message.author.bot and has_channel_perms(message):
         msg_content = message.content
         if message.content.startswith('> '):
             msg_content = message.content[len('> '):]
