@@ -40,6 +40,9 @@ processing_users = []
 mention_in_message = True
 mention_message_separator = " - "
 
+message_prefix = ">"
+command_prefix = "--" # Bascially treated as message_prefix + command_prefix
+
 ult_operators = []
 operators = []
 banned_users = []
@@ -236,308 +239,394 @@ def load_ops_bans():
 # Prepare the operators and ban lists
 load_ops_bans()
 
+def matches_command(content, command):
+    try:
+        content = content[:content.index(" ")]
+    except (ValueError):
+        pass
+    
+    return content.lower() == command_prefix.lower() + command.lower()
+
+def remove_command(content):
+    try:
+        content = content[content.index(" ") + 1:]
+    except (ValueError):
+        pass
+    
+    return content
+
+def user_id_cleanup(uid):
+    return uid.replace("<@", "").replace("!", "").replace(">", "");
+
+def get_args(content):
+    return split_args(remove_command(content));
+
+def split_args(full_args):
+    return full_args.split(" ");
+
+def get_user_perms(message):
+    load_ops_bans()
+    
+    user_perms = {
+        "banned": message.author.id in banned_users,
+        "op": message.author.id in operators,
+        "ult_op": message.author.id in ult_operators,
+        "server_admin": message.server == None or message.author.server_permissions.administrator,
+        "private": message.channel.is_private,
+    }
+    
+    return user_perms
+
 async def process_command(msg_content, message):
-    user_command_entered = False
+    # 0 = OK
+    # 1 = Generic error in arguments
+    # 2 = Too many arguments
+    # 3 = Not enough arguments
+    # 4 = Generic error
+    # 5 = No permissions error
+    # 6 = User not found error
+    # 7 = Command not found error
+    
+    result = 0
+    
     response = ""
 
     load_ops_bans()
+    user_perms = get_user_perms(message)
 
-    if message.author.id in banned_users and not message.channel.is_private:
-        user_command_entered = True
-        
-        response = "Sorry, you have been banned."
-    else:
-        # Operators and DMs can use these commands
-        if msg_content.startswith('--reset'):
-            user_command_entered = True
-            if message.author.id in operators or message.channel.is_private or message.author.server_permissions.administrator:
-                reset()
-                save_states(get_states_id(message))
+    if matches_command(msg_content, "reset"):
+        if user_perms["op"] or user_perms["private"] or user_perms["server_admin"]:
+            reset()
+            save_states(get_states_id(message))
+            print()
+            print("[Model state reset]")
+            response = "Model state reset."
+        else:
+            result = 5
+            
+    elif matches_command(msg_content, "basicreset"):
+        if user_perms["op"]:
+            reset()
+            print()
+            print("[Model state reset (basic)]")
+            response = "Model state reset (basic)."
+        else:
+            result = 5
+
+    elif matches_command(msg_content, "restart"):
+        if user_perms["ult_op"]:
+            reset()
+            print()
+            print("[Restarting...]")
+            response = "Restarting..."
+            await send_message(message, response)
+            exit()
+        else:
+            result = 5
+    
+    elif matches_command(msg_content, "save"):
+        if user_perms["ult_op"]:
+            input_text = remove_command(msg_content)
+            save(input_text)
+            print()
+            print("[Saved states to \"{}.pkl\"]".format(input_text))
+            response = "Saved model state to \"{}.pkl\".".format(input_text)
+        else:
+            result = 5
+    
+    elif matches_command(msg_content, "load"):
+        if user_perms["ult_op"]:
+            input_text = remove_command(msg_content)
+            load(input_text)
+            print()
+            print("[Loaded saved states from \"{}.pkl\"]".format(input_text))
+            response = "Loaded saved model state from \"{}.pkl\".".format(input_text)
+        else:
+            result = 5
+
+    elif matches_command(msg_content, "autosaveon"):
+        if user_perms["ult_op"]:
+            if not autosave:
+                autosave = True
                 print()
-                print("[Model state reset]")
-                response = "Model state reset."
+                print("[Turned on autosaving]")
+                response = "Turned on autosaving."
             else:
-                response = "Error: Insufficient permissions."
-                
-        # Operators can use these commands
-        elif msg_content.startswith('--basicreset'):
-            user_command_entered = True
-            if message.author.id in operators:
-                reset()
+                response = "Autosaving is already on"
+                result = 4
+        else:
+            result = 5
+    
+    elif matches_command(msg_content, "autosaveoff"):
+        if user_perms["ult_op"]:
+            if autosave:
+                autosave = False
                 print()
-                print("[Model state reset (basic)]")
-                response = "Model state reset (basic)."
+                print("[Turned off autosaving]")
+                response = "Turned off autosaving."
             else:
-                response = "Error: Insufficient permissions."
-
-        elif msg_content.startswith('--restart'):
-            user_command_entered = True
-            if message.author.id in ult_operators:
-                reset()
+                response = "Autosaving is already off"
+                result = 4
+        else:
+            result = 5
+    
+    elif matches_command(msg_content, "autoloadon"):
+        if user_perms["ult_op"]:
+            if not autoload:
+                autoload = True
                 print()
-                print("[Restarting...]")
-                response = "Restarting..."
-                await send_message(message, response)
-                exit()
+                print("[Turned on autoloading]")
+                response = "Turned on autoloading."
             else:
-                response = "Error: Insufficient permissions."
-        
-        elif msg_content.startswith('--save '):
-            user_command_entered = True
-            if message.author.id in operators:
-                input_text = msg_content[len('--save '):]
-                save(input_text)
+                response = "Autoloading is already on"
+                result = 4
+        else:
+            result = 5
+    
+    elif matches_command(msg_content, "autoloadoff"):
+        if user_perms["ult_op"]:
+            if autoload:
+                autoload = False
                 print()
-                print("[Saved states to \"{}.pkl\"]".format(input_text))
-                response = "Saved model state to \"{}.pkl\".".format(input_text)
+                print("[Turned off autoloading]")
+                response = "Turned off autoloading."
             else:
-                response = "Error: Insufficient permissions."
-        
-        elif msg_content.startswith('--load '):
-            user_command_entered = True
-            if message.author.id in operators:
-                input_text = msg_content[len('--load '):]
-                load(input_text)
-                print()
-                print("[Loaded saved states from \"{}.pkl\"]".format(input_text))
-                response = "Loaded saved model state from \"{}.pkl\".".format(input_text)
-            else:
-                response = "Error: Insufficient permissions."
+                response = "Autoloading is already off"
+                result = 4
+        else:
+            result = 5
 
-        elif msg_content.startswith('--autosaveon'):
-            user_command_entered = True
-            if message.author.id in operators:
-                if not autosave:
-                    autosave = True
-                    print()
-                    print("[Turned on autosaving]")
-                    response = "Turned on autosaving."
-                else:
-                    response = "Error: Autosaving is already on."
-            else:
-                response = "Error: Insufficient permissions."
-        
-        elif msg_content.startswith('--autosaveoff'):
-            user_command_entered = True
-            if message.author.id in operators:
-                if autosave:
-                    autosave = False
-                    print()
-                    print("[Turned off autosaving]")
-                    response = "Turned off autosaving."
-                else:
-                    response = "Error: Autosaving is already off."
-            else:
-                response = "Error: Insufficient permissions."
-        
-        elif msg_content.startswith('--autoloadon'):
-            user_command_entered = True
-            if message.author.id in operators:
-                if not autoload:
-                    autoload = True
-                    print()
-                    print("[Turned on autoloading]")
-                    response = "Turned on autoloading."
-                else:
-                    response = "Error: Autoloading is already on."
-            else:
-                response = "Error: Insufficient permissions."
-        
-        elif msg_content.startswith('--autoloadoff'):
-            user_command_entered = True
-            if message.author.id in operators:
-                if autoload:
-                    autoload = False
-                    print()
-                    print("[Turned off autoloading]")
-                    response = "Turned off autoloading."
-                else:
-                    response = "Error: Autoloading is already off."
-            else:
-                response = "Error: Insufficient permissions."
+    elif matches_command(msg_content, "op"):
+        if user_perms["ult_op"]:
+            # Replacements are to support mentioned users
+            input_text = user_id_cleanup(remove_command(msg_content))
+            user_exists = True
+            
+            # Check if user actually exists
+            try:
+                await client.get_user_info(input_text)
+            except discord.NotFound:
+                user_exists = False
+            except discord.HTTPException:
+                user_exists = False
 
-        elif msg_content.startswith('--op '):
-            user_command_entered = True
-            if message.author.id in operators:
-                # Replacements are to support mentioned users
-                input_text = msg_content[len('--op '):].replace('<@', '').replace('!', '').replace('>', '')
-                user_exists = True
-                
-                # Check if user actually exists
-                try:
-                    await client.get_user_info(input_text)
-                except discord.NotFound:
-                    user_exists = False
-                except discord.HTTPException:
-                    user_exists = False
-
-                if not input_text == message.author.id:
-                    if not input_text in ult_operators and user_exists and not input_text == client.user.id:
-                        if not input_text in operators:
-                            if not input_text in banned_users:
-                                load_ops_bans()
-                                operators.append(input_text)
-                                save_ops_bans()
-                                print()
-                                print("[Opped \"{}\"]".format(input_text))
-                                response = "Opped \"{}\".".format(input_text)
-                            else:
-                                response = "Error: Unable to op user \"{}\", they're banned!".format(input_text)
-                        else:
-                            response = "Error: Unable to op user \"{}\", they're already OP...".format(input_text)
-                    else:
-                        response = "Error: Unable to op user \"{}\", either they don't exist or you don't have permission to do so.".format(input_text)
-                else:
-                    response = "Error: Unable to op user \"{}\", that's yourself...".format(input_text)
-            else:
-                response = "Error: Insufficient permissions."
-
-        elif msg_content.startswith('--deop '):
-            user_command_entered = True
-            if message.author.id in operators:
-                # Replacements are to support mentioned users
-                input_text = msg_content[len('--deop '):].replace('<@', '').replace('!', '').replace('>', '')
-                user_exists = True
-                
-                # Check if user actually exists
-                try:
-                    await client.get_user_info(input_text)
-                except discord.NotFound:
-                    user_exists = False
-                except discord.HTTPException:
-                    user_exists = False
-
-                if not input_text == message.author.id:
-                    if not input_text in ult_operators and user_exists and not input_text == client.user.id:
-                        if input_text in operators:
-                            load_ops_bans()
-                            if input_text in operators:
-                                operators.remove(input_text)
-                            save_ops_bans()
-                            print()
-                            print("[De-opped \"{}\"]".format(input_text))
-                            response = "De-opped \"{}\".".format(input_text)
-                        else:
-                            response = "Error: Unable to de-op user \"{}\", they're already OP...".format(input_text)
-                    else:
-                        response = "Error: Unable to de-op user \"{}\", either they don't exist or you don't have permission to do so.".format(input_text)
-                else:
-                    response = "Error: Unable to de-op user \"{}\", that's yourself...".format(input_text)
-            else:
-                response = "Error: Insufficient permissions."
-
-        elif msg_content.startswith('--ban '):
-            user_command_entered = True
-            if message.author.id in operators:
-                # Replacements are to support mentioned users
-                input_text = msg_content[len('--ban '):].replace('<@', '').replace('!', '').replace('>', '')
-                user_exists = True
-                
-                # Check if user actually exists
-                try:
-                    await client.get_user_info(input_text)
-                except discord.NotFound:
-                    user_exists = False
-                except discord.HTTPException:
-                    user_exists = False
-
-                if not input_text == message.author.id:
-                    if not input_text in ult_operators and user_exists and not input_text == client.user.id:
+            if not input_text == message.author.id:
+                if not input_text in ult_operators and user_exists and not input_text == client.user.id:
+                    if not input_text in operators:
                         if not input_text in banned_users:
                             load_ops_bans()
-                            banned_users.append(input_text)
+                            operators.append(input_text)
                             save_ops_bans()
                             print()
-                            print("[Banned \"{}\"]".format(input_text))
-                            response = "Banned \"{}\".".format(input_text)
+                            print("[Opped \"{}\"]".format(input_text))
+                            response = "Opped \"{}\".".format(input_text)
                         else:
-                            response = "Error: Unable to ban user \"{}\", they're already banned!".format(input_text)
+                            response = "Unable to op user \"{}\", they're banned".format(input_text)
+                            result = 4
                     else:
-                        response = "Error: Unable to ban user \"{}\", either they don't exist or you don't have permission to do so.".format(input_text)
+                        response = "Unable to op user \"{}\", they're already OP".format(input_text)
+                        result = 4
                 else:
-                    response = "Error: Unable to ban user \"{}\", that's yourself...".format(input_text)
+                    response = "Unable to op user \"{}\", either they don't exist or you don't have permission to do so".format(input_text)
+                    result = 6
             else:
-                response = "Error: Insufficient permissions."
+                response = "Unable to op user \"{}\", __that's yourself__...".format(input_text)
+                result = 4
+        else:
+            result = 5
 
-        elif msg_content.startswith('--unban '):
-            user_command_entered = True
-            if message.author.id in operators:
-                # Replacements are to support mentioned users
-                input_text = msg_content[len('--unban '):].replace('<@', '').replace('!', '').replace('>', '')
-                user_exists = True
-                
-                # Check if user actually exists
-                try:
-                    await client.get_user_info(input_text)
-                except discord.NotFound:
-                    user_exists = False
-                except discord.HTTPException:
-                    user_exists = False
+    elif matches_command(msg_content, "deop"):
+        if user_perms["ult_op"]:
+            # Replacements are to support mentioned users
+            input_text = user_id_cleanup(remove_command(msg_content))
+            user_exists = True
+            
+            # Check if user actually exists
+            try:
+                await client.get_user_info(input_text)
+            except discord.NotFound:
+                user_exists = False
+            except discord.HTTPException:
+                user_exists = False
 
-                if not input_text == message.author.id:
-                    if not input_text in ult_operators and user_exists and not input_text == client.user.id:
+            if not input_text == message.author.id:
+                if not input_text in ult_operators and user_exists and not input_text == client.user.id:
+                    if input_text in operators:
+                        load_ops_bans()
+                        if input_text in operators:
+                            operators.remove(input_text)
+                        save_ops_bans()
+                        print()
+                        print("[De-opped \"{}\"]".format(input_text))
+                        response = "De-opped \"{}\".".format(input_text)
+                    else:
+                        response = "Unable to de-op user \"{}\", they're not OP".format(input_text)
+                        result = 4
+                else:
+                    response = "Unable to de-op user \"{}\", either they don't exist or you don't have permission to do so".format(input_text)
+                    result = 6
+            else:
+                response = "Unable to de-op user \"{}\", __that's yourself__...".format(input_text)
+                result = 4
+        else:
+            result = 5
+
+    elif matches_command(msg_content, "ban"):
+        if user_perms["op"]:
+            # Replacements are to support mentioned users
+            input_text = user_id_cleanup(remove_command(msg_content))
+            user_exists = True
+            
+            # Check if user actually exists
+            try:
+                await client.get_user_info(input_text)
+            except discord.NotFound:
+                user_exists = False
+            except discord.HTTPException:
+                user_exists = False
+
+            if not input_text == message.author.id:
+                if not input_text in ult_operators and user_exists and not input_text == client.user.id:
+                    if not input_text in banned_users:
+                        load_ops_bans()
+                        banned_users.append(input_text)
+                        save_ops_bans()
+                        print()
+                        print("[Banned \"{}\"]".format(input_text))
+                        response = "Banned \"{}\".".format(input_text)
+                    else:
+                        response = "Unable to ban user \"{}\", they're already banned".format(input_text)
+                        result = 4
+                else:
+                    response = "Unable to ban user \"{}\", either they don't exist or you don't have permission to do so".format(input_text)
+                    result = 6
+            else:
+                response = "Unable to ban user \"{}\", __that's yourself__...".format(input_text)
+                result = 4
+        else:
+            result = 5
+
+    elif matches_command(msg_content, "unban"):
+        if user_perms["op"]:
+            # Replacements are to support mentioned users
+            input_text = user_id_cleanup(remove_command(msg_content))
+            user_exists = True
+            
+            # Check if user actually exists
+            try:
+                await client.get_user_info(input_text)
+            except discord.NotFound:
+                user_exists = False
+            except discord.HTTPException:
+                user_exists = False
+
+            if not input_text == message.author.id:
+                if not input_text in ult_operators and user_exists and not input_text == client.user.id:
+                    if input_text in banned_users:
+                        load_ops_bans()
                         if input_text in banned_users:
-                            load_ops_bans()
-                            if input_text in banned_users:
-                                banned_users.remove(input_text)
-                            save_ops_bans()
-                            print()
-                            print("[Un-banned \"{}\"]".format(input_text))
-                            response = "Un-banned \"{}\".".format(input_text)
-                        else:
-                            response = "Error: Unable to un-ban user \"{}\", they're not banned!".format(input_text)
+                            banned_users.remove(input_text)
+                        save_ops_bans()
+                        print()
+                        print("[Un-banned \"{}\"]".format(input_text))
+                        response = "Un-banned \"{}\".".format(input_text)
                     else:
-                        response = "Error: Unable to un-ban user \"{}\", either they don't exist or you don't have permission to do so.".format(input_text)
+                        response = "Unable to un-ban user \"{}\", they're not banned".format(input_text)
+                        result = 4
                 else:
-                    response = "Error: Unable to un-ban user \"{}\", that's yourself...".format(input_text)
+                    response = "Unable to un-ban user \"{}\", either they don't exist or you don't have permission to do so".format(input_text)
+                    result = 6
             else:
-                response = "Error: Insufficient permissions."
+                response = "Unable to un-ban user \"{}\", __that's yourself__...".format(input_text)
+                result = 4
+        else:
+            result = 5
 
-        elif msg_content.startswith('--temperature '):
-            user_command_entered = True
-            if message.author.id in operators:
-                input_text = msg_content[len('--temperature '):]
-                returned = change_settings('temperature', input_text)
-                print()
-                print(str(returned))
-                response = str(returned)
-            else:
-                response = "Insufficient permissions."
-        
-        elif msg_content.startswith('--relevance '):
-            user_command_entered = True
-            if message.author.id in operators:
-                input_text = msg_content[len('--relevance '):]
-                returned = change_settings('relevance', input_text)
-                print()
-                print(str(returned))
-                response = str(returned)
-            else:
-                response = "Insufficient permissions."
-        
-        elif msg_content.startswith('--topn '):
-            user_command_entered = True
-            if message.author.id in operators:
-                input_text = msg_content[len('--topn '):]
-                returned = change_settings('topn', input_text)
-                print()
-                print(str(returned))
-                response = str(returned)
-            else:
-                response = "Insufficient permissions."
-
-        elif msg_content.startswith('--beam_width '):
-            user_command_entered = True
-            if message.author.id in operators:
-                input_text = msg_content[len('--beam_width '):]
-                returned = change_settings('beam_width', input_text)
-                print()
-                print(str(returned))
-                response = str(returned)
-            else:
-                response = "Insufficient permissions."
+    elif matches_command(msg_content, "temperature"):
+        if user_perms["op"] or user_perms["private"] or user_perms["server_admin"]:
+            input_text = remove_command(msg_content)
+            returned = change_settings('temperature', input_text)
+            print()
+            print(str(returned))
+            response = str(returned)
+        else:
+            result = 5
     
-    return user_command_entered, response
+    elif matches_command(msg_content, "relevance"):
+        if user_perms["op"] or user_perms["private"] or user_perms["server_admin"]:
+            input_text = remove_command(msg_content)
+            returned = change_settings('relevance', input_text)
+            print()
+            print(str(returned))
+            response = str(returned)
+        else:
+            result = 5
+    
+    elif matches_command(msg_content, "topn"):
+        if user_perms["op"] or user_perms["private"] or user_perms["server_admin"]:
+            input_text = remove_command(msg_content)
+            returned = change_settings('topn', input_text)
+            print()
+            print(str(returned))
+            response = str(returned)
+        else:
+            result = 5
+
+    elif matches_command(msg_content, "beam_width"):
+        if user_perms["op"] or user_perms["private"] or user_perms["server_admin"]:
+            input_text = remove_command(msg_content)
+            returned = change_settings('beam_width', input_text)
+            print()
+            print(str(returned))
+            response = str(returned)
+        else:
+            result = 5
+
+    if result == 0:
+        if response == "":
+            response = "Command successful"
+        
+        response = "System: " + response
+    elif result == 1:
+        if response == "":
+            response = "Invalid argument(s)"
+        
+        response = "Error: " + response
+    elif result == 2:
+        if response == "":
+            response = "Too many arguments"
+        
+        response = "Error: " + response
+    elif result == 3:
+        if response == "":
+            response = "Not enough arguments"
+        
+        response = "Error: " + response
+    elif result == 4:
+        if response == "":
+            response = "Generic error"
+        
+        response = "Error: " + response
+    elif result == 5:
+        if response == "":
+            response = "Insufficient permissions"
+        
+        response = "Error: " + response
+    elif result == 6:
+        if response == "":
+            response = "User not found"
+        
+        response = "Error: " + response
+    elif result == 7:
+        if response == "":
+            response = "Command not found"
+        
+        response = "Error: " + response
+
+    if result > 0:
+        response += " (Error Code " + str(result) + ")"
+    
+    return response
 
 def has_channel_perms(message):
     return message.server == None or message.channel.permissions_for(message.server.get_member(client.user.id)).send_messages;
@@ -547,7 +636,7 @@ async def set_typing(message):
         await client.send_typing(message.channel)
 
 async def send_message(message, text):
-    if not text == '' and has_channel_perms(message):
+    if not text == "" and has_channel_perms(message):
         if mention_in_message:
             user_mention = "<@" + message.author.id + ">" + mention_message_separator
         else:
@@ -558,23 +647,27 @@ async def send_message(message, text):
 async def on_message(message):
     global save, load, get, get_current, reset, change_settings, consumer, states_file, autosave
     
-    if (message.content.startswith('>') or message.channel.is_private) and not message.author.bot and has_channel_perms(message):
+    if (message.content.lower().startswith(message_prefix.lower()) or message.channel.is_private) and not message.author.bot and has_channel_perms(message):
         msg_content = message.content
-        if message.content.startswith('> '):
-            msg_content = message.content[len('> '):]
-        elif message.content.startswith('>'):
-            msg_content = message.content[len('>'):]
+        
+        if message.content.startswith(message_prefix):
+            msg_content = message.content[len(message_prefix):]
+        if message.content.startswith(" "):
+            msg_content = message.content[len(" "):]
 
         await set_typing(message)
 
-        # Run this out of empty checks to see if the user is banned, first
-        user_command_entered, response = await process_command(msg_content, message)
+        user_perms = get_user_perms(message)
+        if user_perms["banned"] and not user_perms["private"]:
+            response = "Error: You have been banned and can only message in DMs."
 
-        if user_command_entered:
+        elif msg_content.lower().startswith(command_prefix.lower()):
+            response = await process_command(msg_content, message)
             await send_message(message, response)
+
         else:
             if not (message.author.id in processing_users):
-                if not msg_content == '':
+                if not msg_content == "":
                     if not len(msg_content) > max_length:
                         # Possibly problematic: if something goes wrong,
                         # then the user couldn't send messages anymore
@@ -588,7 +681,7 @@ async def on_message(message):
                         old_states = copy.deepcopy(states)
                         
                         print() # Print out new line for formatting
-                        print('> ' + msg_content) # Print out user message
+                        print("> " + msg_content) # Print out user message
                         
                         # Automatically prints out response as it's written
                         result, states = await consumer(msg_content, states=states, function=set_typing, function_args=message)
@@ -608,7 +701,7 @@ async def on_message(message):
                         
                         print() # Move cursor to next line after response
                         
-                        log('\n> ' + msg_content + '\n' + result + '\n') # Log entire interaction
+                        log("\n> " + msg_content + "\n" + result + "\n") # Log entire interaction
                         if autosave and len(old_states) == len(states):
                             # Get the difference in the states
                             
@@ -628,10 +721,10 @@ async def on_message(message):
 
                         processing_users.remove(message.author.id)
                     else:
-                        await send_message(message, 'Error: Your message is too long (' + str(len(msg_content)) + '/' + str(max_length) + ' characters)!')
+                        await send_message(message, "Error: Your message is too long (" + str(len(msg_content)) + "/" + str(max_length) + " characters)!")
                 else:
-                    await send_message(message, 'Error: Your message is empty!')
+                    await send_message(message, "Error: Your message is empty!")
             else:
-                await send_message(message, 'Error: Please wait for your response to be generated before sending more messages!')
+                await send_message(message, "Error: Please wait for your response to be generated before sending more messages!")
 
-client.run('Token Goes Here', reconnect=True)
+client.run("Token Goes Here", reconnect=True)
