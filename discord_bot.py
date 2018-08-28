@@ -21,7 +21,7 @@ autoload = True
 
 model = "reddit"
 save_dir = "models/" + model
-max_length = 500
+max_length = 150
 relevance = 0.1
 temperature = 1.2
 topn = 10
@@ -37,6 +37,8 @@ banned_users_file = user_settings_folder + "/" + "banned_users.cfg"
 
 processing_users = []
 
+max_input_length = 1500
+
 mention_in_message = True
 mention_message_separator = " - "
 
@@ -50,7 +52,7 @@ banned_users = []
 states_queue = {}
 
 print('Loading Chatbot-RNN...')
-save, load, get, get_current, reset, change_settings, consumer = libchatbot(save_dir=save_dir, max_length=max_length, temperature=temperature, relevance=relevance, topn=topn)
+lib_save_states, lib_load_states, lib_get_states, lib_get_current_states, lib_reset_states, change_settings, consumer = libchatbot(save_dir=save_dir, max_length=max_length, temperature=temperature, relevance=relevance, topn=topn)
 print('Chatbot-RNN has been loaded.')
 
 print('Preparing Discord Bot...')
@@ -70,17 +72,17 @@ def log(message):
         with open(log_name, "a", encoding="utf-8") as log_file:
             log_file.write(message)
 
-def load_states(states_id):
-    global states_folder, states_folder_dm, load, reset
+def load_states(states_id, custom_name="default"):
+    global states_folder, states_folder_dm, lib_load_states, lib_reset_states
 
     make_folders()
     
-    states_file = get_states_file(states_id)
+    states_file = get_states_file(states_id, custom_name=custom_name)
         
     if os.path.exists(states_file + ".pkl") and os.path.isfile(states_file + ".pkl"):
-        return get(states_file)
+        return lib_get_states(states_file)
     else:
-        return reset()
+        return lib_reset_states()
 
 def make_folders():
     if not os.path.exists(states_folder):
@@ -92,7 +94,7 @@ def make_folders():
     if not os.path.exists(user_settings_folder):
         os.makedirs(user_settings_folder)
 
-def get_states_file(states_id):
+def get_states_file(states_id, custom_name="default"):
     if states_id.endswith("p"):
         states_file = states_folder_dm + "/" + states_id
     else:
@@ -100,14 +102,14 @@ def get_states_file(states_id):
 
     return states_file
 
-def save_states(states_id): # Saves directly to the file, recommended to use states queue
-    global states_folder, states_folder_dm, save
+def save_states(states_id, states=None, custom_name="default"): # Saves directly to the file, recommended to use states queue
+    global states_folder, states_folder_dm, lib_save_states
 
     make_folders()
 
-    states_file = get_states_file(states_id)
+    states_file = get_states_file(states_id, custom_name=custom_name)
     
-    save(states_file)
+    lib_save_states(states_file, states=states)
 
 def add_states_to_queue(states_id, states_diffs):
     current_states_diffs = None
@@ -148,7 +150,7 @@ def write_state_queue():
                         new_states[num][num_two][num_three][num_four] = states[num][num_two][num_three][num_four] - states_diff[total_num]
                         total_num += 1
             
-        save(get_states_file(states_id), states=new_states)
+        lib_save_states(get_states_file(states_id), states=new_states)
     states_queue.clear()
 
 def get_states_size(states):
@@ -294,31 +296,28 @@ async def process_command(msg_content, message):
     load_ops_bans()
     user_perms = get_user_perms(message)
 
+    cmd_args = get_args(msg_content)
+
     if matches_command(msg_content, "reset"):
         if user_perms["op"] or user_perms["private"] or user_perms["server_admin"]:
-            reset()
-            save_states(get_states_id(message))
-            print()
-            print("[Model state reset]")
-            response = "Model state reset."
-        else:
-            result = 5
+            basic_reset = len(cmd_args) >= 1 and cmd_args[0].lower() == "basic"
             
-    elif matches_command(msg_content, "basicreset"):
-        if user_perms["op"]:
-            reset()
+            reset_states = lib_reset_states()
+            
+            if not basic_reset:
+                save_states(get_states_id(message), states=reset_states)
+            
             print()
-            print("[Model state reset (basic)]")
-            response = "Model state reset (basic)."
+            print("[Model state reset" + (" (basic)" if basic_reset else "") + "]")
+            response = "Model state reset" + (" (basic)" if basic_reset else "")
         else:
             result = 5
 
     elif matches_command(msg_content, "restart"):
         if user_perms["ult_op"]:
-            reset()
             print()
             print("[Restarting...]")
-            response = "Restarting..."
+            response = "System: Restarting..."
             await send_message(message, response)
             exit()
         else:
@@ -326,73 +325,103 @@ async def process_command(msg_content, message):
     
     elif matches_command(msg_content, "save"):
         if user_perms["ult_op"]:
-            input_text = remove_command(msg_content)
-            save(input_text)
-            print()
-            print("[Saved states to \"{}.pkl\"]".format(input_text))
-            response = "Saved model state to \"{}.pkl\".".format(input_text)
+            if len(cmd_args) >= 1:
+                input_text = cmd_args[0]
+                
+                if (input_text.endswith(".pkl")):
+                    input_text = input_text[:len(input_text) - len(".pkl")]
+                
+                lib_save_states(input_text)
+                print()
+                print("[Saved states to \"{}.pkl\"]".format(input_text))
+                response = "Saved model state to \"{}.pkl\"".format(input_text)
+            else:
+                result = 3
         else:
             result = 5
     
     elif matches_command(msg_content, "load"):
         if user_perms["ult_op"]:
-            input_text = remove_command(msg_content)
-            load(input_text)
-            print()
-            print("[Loaded saved states from \"{}.pkl\"]".format(input_text))
-            response = "Loaded saved model state from \"{}.pkl\".".format(input_text)
+            if len(cmd_args) >= 1:
+                basic_load = len(cmd_args) >= 2 and cmd_args[1].lower() == "basic"
+                
+                input_text = cmd_args[0]
+
+                if (input_text.endswith(".pkl")):
+                    input_text = input_text[:len(input_text) - len(".pkl")]
+                
+                loaded_states = lib_load_states(input_text)
+
+                if not basic_load:
+                    save_states(get_states_id(message), states=loaded_states)
+                
+                print()
+                print("[Loaded saved states from \"{}.pkl\"" + (" (basic)" if basic_load else "") + "]".format(input_text))
+                response = "Loaded saved model state from \"{}.pkl\"" + (" (basic)" if basic_reset else "").format(input_text)
+            else:
+                result = 3
         else:
             result = 5
 
-    elif matches_command(msg_content, "autosaveon"):
+    elif matches_command(msg_content, "autosave"):
         if user_perms["ult_op"]:
-            if not autosave:
-                autosave = True
-                print()
-                print("[Turned on autosaving]")
-                response = "Turned on autosaving."
+            if len(cmd_args) >= 1:
+                if cmd_args[0].lower() in ["on", "enable", "activate", "true"]:
+                    if not autosave:
+                        autosave = True
+                        print()
+                        print("[Turned on autosaving]")
+                        response = "Turned on autosaving"
+                    else:
+                        response = "Autosaving is already on"
+                        result = 4
+                elif cmd_args[0].lower() in ["off", "disable", "deactivate", "false"]:
+                    if autosave:
+                        autosave = True
+                        print()
+                        print("[Turned off autosaving]")
+                        response = "Turned off autosaving"
+                    else:
+                        response = "Autosaving is already off"
+                        result = 4
+                else:
+                    result = 1
             else:
-                response = "Autosaving is already on"
-                result = 4
+                autosave = not autosave
+                print()
+                print("[Toggled autosaving " + ("on" if autosave else "off") + "]")
+                response = "Toggled autosaving " + ("on" if autosave else "off")
         else:
             result = 5
-    
-    elif matches_command(msg_content, "autosaveoff"):
+
+    elif matches_command(msg_content, "autoload"):
         if user_perms["ult_op"]:
-            if autosave:
-                autosave = False
-                print()
-                print("[Turned off autosaving]")
-                response = "Turned off autosaving."
+            if len(cmd_args) >= 1:
+                if cmd_args[0].lower() in ["on", "enable", "activate", "true"]:
+                    if not autoload:
+                        autoload = True
+                        print()
+                        print("[Turned on autoloading]")
+                        response = "Turned on autoloading"
+                    else:
+                        response = "Autoloading is already on"
+                        result = 4
+                elif cmd_args[0].lower() in ["off", "disable", "deactivate", "false"]:
+                    if autoload:
+                        autoload = True
+                        print()
+                        print("[Turned off autoloading]")
+                        response = "Turned off autoloading"
+                    else:
+                        response = "Autoloading is already off"
+                        result = 4
+                else:
+                    result = 1
             else:
-                response = "Autosaving is already off"
-                result = 4
-        else:
-            result = 5
-    
-    elif matches_command(msg_content, "autoloadon"):
-        if user_perms["ult_op"]:
-            if not autoload:
-                autoload = True
+                autoload = not autoload
                 print()
-                print("[Turned on autoloading]")
-                response = "Turned on autoloading."
-            else:
-                response = "Autoloading is already on"
-                result = 4
-        else:
-            result = 5
-    
-    elif matches_command(msg_content, "autoloadoff"):
-        if user_perms["ult_op"]:
-            if autoload:
-                autoload = False
-                print()
-                print("[Turned off autoloading]")
-                response = "Turned off autoloading."
-            else:
-                response = "Autoloading is already off"
-                result = 4
+                print("[Toggled autoloading " + ("on" if autoload else "off") + "]")
+                response = "Toggled autoloading " + ("on" if autoload else "off")
         else:
             result = 5
 
@@ -582,6 +611,11 @@ async def process_command(msg_content, message):
         else:
             result = 5
 
+    else:
+        result = 7
+
+    error_code_print = False
+    
     if result == 0:
         if response == "":
             response = "Command successful"
@@ -605,6 +639,7 @@ async def process_command(msg_content, message):
     elif result == 4:
         if response == "":
             response = "Generic error"
+            error_code_print = True
         
         response = "Error: " + response
     elif result == 5:
@@ -623,7 +658,7 @@ async def process_command(msg_content, message):
         
         response = "Error: " + response
 
-    if result > 0:
+    if error_code_print:
         response += " (Error Code " + str(result) + ")"
     
     return response
@@ -645,21 +680,22 @@ async def send_message(message, text):
 
 @client.event
 async def on_message(message):
-    global save, load, get, get_current, reset, change_settings, consumer, states_file, autosave
+    global lib_save_states, lib_load_states, lib_get_states, lib_get_current_states, lib_reset_states, change_settings, consumer, states_file, autosave
     
     if (message.content.lower().startswith(message_prefix.lower()) or message.channel.is_private) and not message.author.bot and has_channel_perms(message):
         msg_content = message.content
         
-        if message.content.startswith(message_prefix):
-            msg_content = message.content[len(message_prefix):]
-        if message.content.startswith(" "):
-            msg_content = message.content[len(" "):]
+        if msg_content.startswith(message_prefix):
+            msg_content = msg_content[len(message_prefix):]
+        if msg_content.startswith(" "):
+            msg_content = msg_content[len(" "):]
 
         await set_typing(message)
 
         user_perms = get_user_perms(message)
         if user_perms["banned"] and not user_perms["private"]:
-            response = "Error: You have been banned and can only message in DMs."
+            response = "Error: You have been banned and can only use this bot in DMs"
+            await send_message(message, response)
 
         elif msg_content.lower().startswith(command_prefix.lower()):
             response = await process_command(msg_content, message)
@@ -668,7 +704,7 @@ async def on_message(message):
         else:
             if not (message.author.id in processing_users):
                 if not msg_content == "":
-                    if not len(msg_content) > max_length:
+                    if not len(msg_content) > max_input_length:
                         # Possibly problematic: if something goes wrong,
                         # then the user couldn't send messages anymore
                         processing_users.append(message.author.id)
@@ -676,25 +712,33 @@ async def on_message(message):
                         if autoload:
                             states = load_states(get_states_id(message))
                         else:
-                            states = get_current()
+                            states = lib_get_current_states()
                         
                         old_states = copy.deepcopy(states)
                         
+                        clean_msg_content = message.clean_content
+
+                        if clean_msg_content.startswith(message_prefix):
+                            clean_msg_content = clean_msg_content[len(message_prefix):]
+                        if clean_msg_content.startswith(" "):
+                            clean_msg_content = clean_msg_content[len(" "):]
+                        
                         print() # Print out new line for formatting
-                        print("> " + msg_content) # Print out user message
+                        print("> " + clean_msg_content) # Print out user message
                         
                         # Automatically prints out response as it's written
-                        result, states = await consumer(msg_content, states=states, function=set_typing, function_args=message)
+                        result, states = await consumer(clean_msg_content, states=states, function=set_typing, function_args=message)
 
                         # Purely debug
                         # print(states[0][0][0]) Prints out the lowest level array
                         # for state in states[0][0][0]: Prints out every entry in the lowest level array
                         #     print(state)
 
-                        while result.startswith(' '):
+                        # Remove whitespace before the message
+                        while result.startswith(" "):
                             result = result[1:]
                         
-                        if result == '':
+                        if not mention_in_message and result == "":
                             result = "..."
                         
                         await send_message(message, result)
@@ -714,17 +758,17 @@ async def on_message(message):
                             
                             add_states_to_queue(get_states_id(message), states_diff)
                             write_state_queue()
-                            # save_channel_states(message.channel) Old saving
+                            # save_states(get_states_id(message)) Old saving
                         elif autosave and len(old_states) != len(states):
                             # Revert to old saving to directly write new array dimensions
-                            save_channel_states(get_states_id(message))
+                            save_states(get_states_id(message))
 
                         processing_users.remove(message.author.id)
                     else:
-                        await send_message(message, "Error: Your message is too long (" + str(len(msg_content)) + "/" + str(max_length) + " characters)!")
+                        await send_message(message, "Error: Your message is too long (" + str(len(msg_content)) + "/" + str(max_input_length) + " characters)")
                 else:
-                    await send_message(message, "Error: Your message is empty!")
+                    await send_message(message, "Error: Your message is empty")
             else:
-                await send_message(message, "Error: Please wait for your response to be generated before sending more messages!")
+                await send_message(message, "Error: Please wait for your response to be generated before sending more messages")
 
 client.run("Token Goes Here", reconnect=True)
