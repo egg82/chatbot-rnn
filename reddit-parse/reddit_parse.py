@@ -125,7 +125,7 @@ def raw_data_generator(path):
 				file_path = os.path.join(walk_root, file_name)
 				if file_path.endswith(FILE_SUFFIX):
 					print("\nReading from {}".format(file_path))
-					with bz2.open(file_path, "rt") as raw_data:
+					with bz2.open(file_path, "rt", encoding="utf8") as raw_data:
 						try:
 							for line in raw_data: yield line
 						except IOError:
@@ -134,7 +134,7 @@ def raw_data_generator(path):
 				else: print("Skipping file {} (doesn't end with {})".format(file_path, FILE_SUFFIX))
 	elif os.path.isfile(path):
 		print("Reading from {}".format(path))
-		with bz2.open(path, "rt") as raw_data:
+		with bz2.open(path, "rt", encoding="utf8") as raw_data:
 			for line in raw_data: yield line
 
 class OutputHandler():
@@ -162,7 +162,7 @@ class OutputHandler():
 			i += 1
 		self.current_path = path
 		self.current_file_size = 0
-		self.file_reference = bz2.open(self.current_path, mode="wt")
+		self.file_reference = bz2.open(self.current_path, mode="wt", encoding="utf8")
 
 def post_qualifies(json_object, subreddit_blacklist,
 		subreddit_whitelist, substring_blacklist):
